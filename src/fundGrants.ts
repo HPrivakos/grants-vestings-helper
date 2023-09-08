@@ -4,6 +4,8 @@ import * as ethers from 'ethers'
 import { Contract } from '@ethersproject/contracts'
 import periodicTokenVestingABI from '../abis/periodicTokenVesting.json'
 import factoryABI from '../abis/factory.json'
+import BigNumber from 'bignumber.js'
+import { log } from 'console'
 
 const provider = new ethers.providers.InfuraProvider('homestead', process.env.INFURA_KEY)
 
@@ -19,25 +21,82 @@ async function main() {
 
   console.log(`token_type,token_address,receiver,amount,id`)
 
-  const events = await vestingFactory.queryFilter('VestingCreated', tx.blockNumber, tx.blockNumber)
-  for (const event of events.filter((a) => a.transactionHash == tx.hash)) {
+  const events = await vestingFactory.queryFilter('VestingCreated', /* tx.blockNumber, tx.blockNumber */ 17721966)
+  console.log(events.length)
+  const errors = []
+  const total = { mana: 0, dai: 0 }
+  for (const event of events /* .filter((a) => a.transactionHash == tx.hash) */) {
     const contract = vestingContract.attach(event.args!['_address'])
+    //if (contract.address != '0x19076C40e58EDB981b92D49D4733Ee02361c3D35') continue
     const beneficiary = await contract.getBeneficiary()
-    const pending = pendingGrants.find((grant) => grant.configuration.beneficiary == beneficiary)
+    log(pendingGrants[0].configuration.beneficiary.toLowerCase(), beneficiary.toLowerCase())
+    const pending = pendingGrants.find((grant) => grant.configuration.beneficiary.toLowerCase() == beneficiary.toLowerCase())
     if (pending) {
-      const [token, duration] = getTokenAndDuration(pending)
-      if ((await contract.getCliff()) != '2592000') throw new Error('Wrong cliff')
-      if ((await contract.getIsLinear()) != true) throw new Error('Not linear')
-      if ((await contract.getIsPausable()) != true) throw new Error('Not pausable')
-      if ((await contract.getIsRevocable()) != true) throw new Error('Not revocable')
-      if ((await contract.getIsRevoked()) != false) throw new Error('REVOKED!')
-      if ((await contract.paused()) != false) throw new Error('PAUSED!')
-      if ((await contract.getPeriod()) != duration) throw new Error('Wrong period length')
-      if ((await contract.getToken()) != token) throw new Error('Wrong token')
-      if ((await contract.getStart()) != Math.floor(+new Date(pending.finish_at) / 1000)) throw new Error('Wrong start date')
+      console.log(pending)
 
-      console.log(['erc20', token, event.args!['_address'], pending.configuration.size, pending.configuration.title.replace(/,/g, '')].join(','))
+      const totalToken = await contract.getTotal()
+
+      const [token, duration, startDay] = getTokenAndDuration(pending)
+
+      const getTotal = new BigNumber((await contract.getTotal()).toString()).dividedBy(new BigNumber(10).pow(18)).toNumber()
+      const periods: ethers.BigNumber[] = (await contract.getVestedPerPeriod()).map((a: ethers.BigNumber) => a.div(10 ** 9).div(10 ** 9))
+      const finishAt = new Date(pending.finish_at)
+      const startDate = new Date(finishAt.setUTCMonth(finishAt.getMonth() + 1, startDay)).setUTCHours(0, 0, 0, 0) / 1000
+      // check start date is the same and start date is within the next month
+      const contractStartDate = (await contract.getStart()).toNumber()
+      if (contractStartDate != startDate && contractStartDate < startDate + 86400) {
+        errors.push(new Error('Wrong start date'))
+        continue
+      }
+      if ((await contract.getCliff()) != '0') {
+        errors.push(new Error('Wrong cliff'))
+        continue
+      }
+      if ((await contract.getIsLinear()) != false) {
+        errors.push(new Error('Linear'))
+        continue
+      }
+      if ((await contract.getIsPausable()) != true) {
+        errors.push(new Error('Not pausable'))
+        continue
+      }
+      if ((await contract.getIsRevocable()) != true) {
+        errors.push(new Error('Not revocable'))
+        continue
+      }
+      if ((await contract.getIsRevoked()) != false) {
+        errors.push(new Error('REVOKED!'))
+        continue
+      }
+      if ((await contract.paused()) != false) {
+        errors.push(new Error('PAUSED!'))
+        continue
+      }
+      if ((await contract.getPeriod()).toNumber() != 2628000) {
+        errors.push(new Error('Wrong period length'))
+        continue
+      }
+      if (periods.length != duration) {
+        errors.push(new Error('Wrong periods number'))
+        continue
+      }
+      if ((await contract.getToken()) != token) {
+        errors.push(new Error('Wrong token'))
+        continue
+      }
+      if (token == '0x6B175474E89094C44Da98b954EedeAC495271d0F' && getTotal != pending.configuration.size) {
+        errors.push(new Error(`Wrong vested amount: total: ${getTotal}, ${pending.configuration.size}`))
+        continue
+      }
+      total[token == '0x6B175474E89094C44Da98b954EedeAC495271d0F' ? 'dai' : 'mana'] += +ethers.utils.formatEther(totalToken)
+      console.log(['erc20', token, event.args!['_address'], ethers.utils.formatEther(totalToken), ''].join(','))
     }
+  }
+  if (total.dai) console.log('Total DAI:', total.dai)
+  if (total.mana) console.log('Total MANA:', total.mana)
+  if (errors.length) {
+    console.error('Errors:')
+    console.error(errors)
   }
 }
 void main()

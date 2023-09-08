@@ -12,9 +12,9 @@ export async function getPendingGrants(): Promise<Grant[]> {
   return json.data
 }
 
-export function getTokenAndDuration(grant: Grant): [string, number] {
-  const tier = +grant.configuration.tier.split(':')[0].replace('Tier', '').trim()
-  const token = tier > 3 ? '0x6B175474E89094C44Da98b954EedeAC495271d0F' : '0x0f5d2fb29fb7d3cfee444a200298f468908cc942'
-  const duration = tier > 3 ? 60 * 60 * 24 * 30 * 6 : 60 * 60 * 24 * 30 * 3
-  return [token, duration]
+export function getTokenAndDuration(grant: Grant): [string, number, number] {
+  const token = grant.configuration.paymentToken == 'DAI' ? '0x6B175474E89094C44Da98b954EedeAC495271d0F' : '0x0F5D2fB29fb7d3CFeE444a200298f468908cC942'
+  const duration = grant.configuration.projectDuration
+  const start = grant.configuration.vestingStartDate == '1st' ? 1 : 15
+  return [token, duration, start]
 }

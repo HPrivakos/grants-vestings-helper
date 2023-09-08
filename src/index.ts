@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import 'dotenv'
 import * as fs from 'fs/promises'
 import * as ethers from 'ethers'
@@ -25,7 +26,7 @@ async function main() {
     const hex = await getABI(grant)
     inputData.push(hex)
   }
-
+  /* 
   if (!!process.env.ETH_PRIVATE_KEY) {
     const tx = await batchVestings.populateTransaction.createVestings(
       '0xe357273545c152f07afe2c38257b7b653fd3f6d0',
@@ -34,7 +35,7 @@ async function main() {
       inputData
     )
     console.log(tx)
-  }
+  } */
 
   await fs.writeFile('vestings.csv', csv)
 }
@@ -42,6 +43,8 @@ async function main() {
 void main()
 
 function getCSV(grant: Grant): string {
+  console.log(grant)
+
   const [token, duration] = getTokenAndDuration(grant)
 
   const params = [
@@ -50,11 +53,11 @@ function getCSV(grant: Grant): string {
     token, // token
     'yes', // isRevocable
     'yes', // isPausable
-    'yes', // isLinear
+    'no', // isLinear
     Math.floor(+new Date(grant.finish_at) / 1000), // start
-    duration, // period
+    60 * 60 * 24 * 30, // period
     60 * 60 * 24 * 30, // cliff (30 days)
-    [grant.configuration.size].join(':') // vestedPerPeriod
+    [grant.configuration.size / 1].join(':') // vestedPerPeriod
   ].join(',')
 
   return params
